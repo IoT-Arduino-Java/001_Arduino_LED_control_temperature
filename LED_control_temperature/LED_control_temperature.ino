@@ -12,7 +12,7 @@
 The application is used to control which of the 3 LEDs is on (only one at any given time)
 and to read the exterior temperature.
 The LED control is done either by button or by Remote Control.
-The active LED and the temperatured are shown on the LCD and on the UART.
+The active LED and the temperature are shown on the LCD and on the UART.
 
 
  The circuit:
