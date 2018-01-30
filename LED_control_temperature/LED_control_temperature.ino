@@ -187,10 +187,10 @@ void readTemperature()
     lcd.setCursor(0, 0);
     lcd.print("Room Temp: ");
     lcd.print(flTemperature);
-    Serial.print("Temperature:");
+    Serial.print("Temperature: ");
     Serial.println(flTemperature, 6);
 
-    Serial.print("Old Temperature: ");
+    Serial.print("Old temperature: ");
     Serial.println(flOldTemperature, 6);
   }
 
