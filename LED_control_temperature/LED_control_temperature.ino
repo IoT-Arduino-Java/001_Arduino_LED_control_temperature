@@ -183,15 +183,18 @@ void readTemperature()
   
   if (flOldTemperature != flTemperature)
   {
-    flOldTemperature = flTemperature;
+
     lcd.setCursor(0, 0);
     lcd.print("Room Temp: ");
     lcd.print(flTemperature);
+
     Serial.print("Temperature: ");
     Serial.println(flTemperature, 6);
 
     Serial.print("Old temperature: ");
     Serial.println(flOldTemperature, 6);
+
+    flOldTemperature = flTemperature;
   }
 
 }
