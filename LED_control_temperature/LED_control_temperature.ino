@@ -4,6 +4,7 @@
  Application based on:
  - 3 LEDs
  - 1 temperature sensor
+ - 1 Real Time Clock DS3231
  - 1 IR sensor
  - 1 IR Remote control
  - 1 button
@@ -16,22 +17,33 @@ The active LED and the temperature are shown on the LCD and on the UART.
 
 
  The circuit:
- * LEDs attached from pin 3,4,5 to ground
- * pushbutton attached to pin 2 from +5V
- * 10K resistor attached to pin 2 from ground
- * TMP35GS sensor attached to GND, +5V and Analog channel A0.
- * IR sensor attached to GND, + 5V and pin 11.
- * 1602 LCD display attached via I2C
+ * - LEDs attached from pin 3,4,5 to ground
+ * - pushbutton attached to pin 2 from +5V
+ * - 10K resistor attached to pin 2 from ground
+ * - TMP35GS sensor attached to GND, +5V and Analog channel A0.
+ * - IR sensor attached to GND, + 5V and pin 11.
+ * - DS3231 sensor attached via I2C
+ * - 1602 LCD display attached via I2C
  * 
  * Note: on most Arduinos there is already an LED on the board
  attached to pin 13.
 
  */
-#include <Wire.h> 
-#include <LiquidCrystal_I2C.h>
-#include <IRremote.h>
+ 
+ /************************************************************************************
+ * Includes
+ ************************************************************************************/
+#include <Wire.h>                //I2C library
+#include <LiquidCrystal_I2C.h>   //LCD I2C library
+#include <DS3231.h>              //temperature sensor library
+#include <IRremote.h>            //IR remote control library
 
-#define IR_CONTROL_CHMINUS   0xFFA25D 
+
+/************************************************************************************
+ * Defines
+ ************************************************************************************/
+//IR remote control button codes
+#define IR_CONTROL_CHMINUS   0xFFA25D
 #define IR_CONTROL_CH        0xFF629D
 #define IR_CONTROL_CHPLUS    0xFFE21D
 #define IR_CONTROL_PREV      0xFF22DD
@@ -53,10 +65,17 @@ The active LED and the temperature are shown on the LCD and on the UART.
 #define IR_CONTROL_BUTON8    0xFF4AB5
 #define IR_CONTROL_BUTON9    0xFF52AD
 
+
+/************************************************************************************
+ * Variables
+ ************************************************************************************/
 // IR variables
-int RECV_PIN = 11;
+int RECV_PIN = 6;
 IRrecv irrecv(RECV_PIN);
 decode_results results;
+
+// Init the DS3231 using the hardware interface
+DS3231  rtc(SDA, SCL);
 
 // constants won't change. They're used here to
 // set pin numbers:
@@ -83,7 +102,12 @@ float flOldTemperature = 0;
 
 
 /************************************************************************************
- * 
+ * Functions
+ ************************************************************************************/
+ 
+/************************************************************************************
+ *  Name: setup()
+ *  Description: Startup code which runs before the main loop
  ************************************************************************************/
 void setup() {
 
@@ -94,7 +118,7 @@ void setup() {
   //init UART
   Serial.begin(9600); 
   
-  // initialize the LED pins as an output
+  // initialize the LED pins as output
   pinMode(intLedRed,   OUTPUT);
   pinMode(intLedGreen, OUTPUT);
   pinMode(intLedBlue,  OUTPUT);
@@ -106,20 +130,28 @@ void setup() {
   irrecv.enableIRIn(); // Start the IR receiver
   
   // Print the configuration
-  Serial.print("Project description: \n ");
-  Serial.print("Control of 3 LEDs through a button, with the current active LED displayed on an LCD \n\n");
+  Serial.print("Project description: \n");
+  Serial.print("1. Control of 3 LEDs through a button or an IR remote control, with the current active LED displayed on an LCD\n");
+  Serial.print("2. Real time clock monitioring with date and time displayed on LCD based on remote control selection (to be implemented)\n\n");
 
-  Serial.print("Configuration: \n");
-  Serial.print("Button Pin:     ");
+  Serial.print("**************************\n");
+  Serial.print("* Configuration: \n");
+  Serial.print("**************************\n\n");
+  Serial.print("Pin Button:     ");
   Serial.println(buttonPin, DEC);
-  Serial.print("Red Led Pin:    ");
+  Serial.print("Pin Red Led:    ");
   Serial.println(intLedRed, DEC);
-  Serial.print("Green Led Pin:  ");
+  Serial.print("Pin Green Led:  ");
   Serial.println(intLedGreen, DEC);
-  Serial.print("Blue Led Pin:   ");
+  Serial.print("Pin Blue Led:   ");
   Serial.println(intLedBlue, DEC);
-
-  Serial.print("\nStart ledactiv: ");
+  Serial.print("Pin IR LED:     ");
+  Serial.println(RECV_PIN, DEC);
+  Serial.print("Pin Temp sens:  ");
+  Serial.println(sensorPin, DEC);
+  Serial.print("\n**************************\n");
+  
+  Serial.print("\n\nActive LED: ");
   Serial.println(ledactiv, DEC);
 
 
@@ -129,30 +161,42 @@ void setup() {
   lcd.setCursor(0,1);
   lcd.print("RED led is on!");
 
+
+  // set temperature analog channel as input
+  pinMode(sensorPin, INPUT);
+  // Initialize the rtc object
+  rtc.begin();
   // read temperature
   readTemperature();
+
 }
 
 /************************************************************************************
- * 
+ * Name: loop()
+ * Description: Main application loop function
  ************************************************************************************/
 void loop() {
 
-  buttonControlLED(); // button Control
-  IRControlLED();     //IR Control
-  
+  // 100 ms operations
+  buttonControlLED();       // button Control
+  IRControlLED();           // IR Control
+
+  // 1 second operations
   if (intTaskCounter == 0)
   {
-    readTemperature(); // temperature read
+    readTemperature();      // read temperature
+    readClock();            // read clock 
   }
-  
+
+  //increase task counter
   intTaskCounter++;
+  
   if (intTaskCounter > 9)
   {
     intTaskCounter = 0;
   }
   
-  delay (100); // 1 second loop
+  delay (100); // 100 ms loop
 }
 
 /************************************************************************************
@@ -170,7 +214,8 @@ void changebutonPin()
 
 
 /************************************************************************************
- * 
+ * Name readTemperature()
+ * Description: reads the temperature for the DS3231 sensor
  ************************************************************************************/
 void readTemperature()
 {
@@ -188,12 +233,15 @@ void readTemperature()
     lcd.print("Room Temp: ");
     lcd.print(flTemperature);
 
-    Serial.print("Temperature: ");
+    Serial.print("\nTemperature: ");
     Serial.println(flTemperature, 6);
 
     Serial.print("Old temperature: ");
     Serial.println(flOldTemperature, 6);
-
+    
+    //read Clock
+    //readClock();
+    
     flOldTemperature = flTemperature;
   }
 
@@ -201,7 +249,8 @@ void readTemperature()
 
 
 /************************************************************************************
- * 
+ * Name IRControlLED()
+ * Description: processes the IR commands
  ************************************************************************************/
 void IRControlLED()
 {
@@ -215,7 +264,7 @@ void IRControlLED()
       {
         case IR_CONTROL_CHMINUS: //CH--
         {
-          Serial.print("CH--IR_CONTROL_CHMINUS\n");
+          Serial.print("\nIR_CONTROL_CHMINUS\n");
           ledactiv--;
       
           if (ledactiv == 0)
@@ -227,7 +276,7 @@ void IRControlLED()
 
         case IR_CONTROL_CHPLUS: //CH++
         {
-          Serial.print("IR_CONTROL_CHPLUS\n");
+          Serial.print("\nIR_CONTROL_CHPLUS\n");
           ledactiv++;
       
           if (ledactiv == 4)
@@ -239,19 +288,19 @@ void IRControlLED()
       
         case IR_CONTROL_BUTON1:
         {
-          Serial.print("IR_CONTROL_BUTON1\n");
+          Serial.print("\nIR_CONTROL_BUTON1\n");
           ledactiv = 1;
           break;
         }
         case IR_CONTROL_BUTON2:
         {
-          Serial.print("IR_CONTROL_BUTON2\n");
+          Serial.print("\nIR_CONTROL_BUTON2\n");
           ledactiv = 2;
           break;
         }
         case IR_CONTROL_BUTON3:
         {
-          Serial.print("IR_CONTROL_BUTON3\n");
+          Serial.print("\nIR_CONTROL_BUTON3\n");
           ledactiv = 3;
           break;
         }
@@ -259,7 +308,8 @@ void IRControlLED()
         default: // nothing here
         break;
       }
-      Serial.print("ledactiv: ");
+
+      Serial.print("\nActive LED: ");
       Serial.println(ledactiv, DEC);
 
       if (ledactiv == 1)      // RED is on
@@ -322,8 +372,9 @@ void buttonControlLED()
         ledactiv = 1;
       }
   
-      Serial.print("ledactiv: ");
+      Serial.print("\nledactiv: ");
       Serial.println(ledactiv, DEC);
+      
 
       if (ledactiv == 1)      // RED is on
       {
@@ -357,5 +408,27 @@ void buttonControlLED()
   else{
    intButtonStateOld = LOW;
   }
+}
+
+
+/************************************************************************************
+ * 
+ ************************************************************************************/
+void readClock()
+{
+  // Send Day-of-Week
+  Serial.print("\nDay: ");
+  Serial.println(rtc.getDOWStr());
+  
+  // Send Date
+  Serial.print("Date: ");
+  Serial.println(rtc.getDateStr());
+  
+  // Send Time
+  Serial.print("Time: ");  
+  Serial.println(rtc.getTimeStr());
+  
+  // Wait one second before repeating :)
+  //delay (1000);
 }
 
